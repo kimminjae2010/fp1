@@ -1,32 +1,53 @@
-# streamlit_app.py
+# 시가총액 상위 10개 기업의 3년간 시가총액 추이 시각화
+
 import streamlit as st
 import yfinance as yf
 import plotly.express as px
 import pandas as pd
 
-st.set_page_config(page_title="세계 시가총액", layout="wide")
-st.title("🌍 전 세계 시가총액 (VT ETF 기준) - 3년간 추이")
+st.set_page_config(page_title="시가총액 상위 10개 기업", layout="wide")
+st.title("🏢 시가총액 상위 10개 기업의 3년간 시가총액 변화")
 
-# VT ETF: Vanguard Total World Stock ETF
-vt = yf.Ticker("VT")
+# 시가총액 탑 10 기업 (2024 기준)
+top10_tickers = {
+    "Apple": "AAPL",
+    "Microsoft": "MSFT",
+    "Alphabet (GOOGL)": "GOOGL",
+    "Amazon": "AMZN",
+    "Nvidia": "NVDA",
+    "Berkshire Hathaway": "BRK-B",
+    "Tesla": "TSLA",
+    "Meta": "META",
+    "Broadcom": "AVGO",
+    "TSMC": "TSM"
+}
 
-# 가격 데이터 불러오기
-hist = vt.history(period="3y")
-hist = hist.reset_index()
+@st.cache_data
+def get_market_cap_data(tickers):
+    all_data = []
+    for name, symbol in tickers.items():
+        try:
+            stock = yf.Ticker(symbol)
+            hist = stock.history(period="3y")
+            shares = stock.info.get("sharesOutstanding", None)
+            if shares is None or hist.empty:
+                continue
+            hist = hist.reset_index()
+            hist["Market Cap"] = hist["Close"] * shares
+            hist["Company"] = name
+            all_data.append(hist[["Date", "Market Cap", "Company"]])
+        except Exception as e:
+            st.warning(f"{name} 데이터 오류: {e}")
+    return pd.concat(all_data, ignore_index=True)
 
-# 시가총액 계산 시도
-info = vt.info
-shares_outstanding = info.get("sharesOutstanding")
+with st.spinner("데이터 불러오는 중..."):
+    df = get_market_cap_data(top10_tickers)
 
-if shares_outstanding:
-    hist["Market Cap"] = hist["Close"] * shares_outstanding
-    fig = px.line(hist, x="Date", y="Market Cap",
-                  title="🌐 VT ETF를 통한 전 세계 시가총액 추정 (3년간)",
-                  labels={"Market Cap": "시가총액 (USD)"})
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.warning("⚠️ 'sharesOutstanding' 정보가 제공되지 않아 시가총액을 계산할 수 없습니다.\n대신 VT ETF의 종가 추이를 보여드립니다.")
-    fig = px.line(hist, x="Date", y="Close",
-                  title="📈 VT ETF 가격 추이 (3년간)",
-                  labels={"Close": "종가 (USD)"})
-    st.plotly_chart(fig, use_container_width=True)
+# Plotly 시각화
+fig = px.line(df,
+              x="Date", y="Market Cap", color="Company",
+              title="시가총액 상위 10개 기업의 시가총액 변화 (3년간)",
+              labels={"Market Cap": "시가총액 (USD)", "Date": "날짜"},
+              height=600)
+
+st.plotly_chart(fig, use_container_width=True)
