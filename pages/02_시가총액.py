@@ -1,4 +1,3 @@
-
 import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
@@ -46,6 +45,9 @@ def get_market_cap_data(tickers, start, end):
     주어진 티커 리스트에 대해 지정된 기간 동안의 시가총액 데이터를 가져옵니다.
     """
     market_cap_data = {}
+    successful_tickers = []
+    failed_tickers = []
+
     for company_name, ticker in tickers.items():
         try:
             # yfinance는 'Adj Close'를 기준으로 시가총액을 계산하기 어려움.
@@ -58,15 +60,32 @@ def get_market_cap_data(tickers, start, end):
             # 정확한 시가총액 데이터를 위해서는 다른 API를 고려해야 합니다.
 
             # 임시 방편으로 종가 데이터를 가져와 시가총액 변화 추이로 활용
-            data = yf.download(ticker, start=start, end=end)
-            if not data.empty:
-                # 종가 데이터를 시가총액 변화의 대리 지표로 사용
+            data = yf.download(ticker, start=start, end=end, progress=False) # progress=False 추가하여 터미널 출력 줄임
+            if not data.empty and 'Close' in data.columns:
                 market_cap_data[company_name] = data['Close']
+                successful_tickers.append(company_name)
             else:
-                st.warning(f"Warning: No data found for {company_name} ({ticker}).")
+                st.warning(f"Warning: No valid 'Close' data found for {company_name} ({ticker}) in the specified period.")
+                failed_tickers.append(company_name)
         except Exception as e:
             st.error(f"Error fetching data for {company_name} ({ticker}): {e}")
-    return pd.DataFrame(market_cap_data)
+            failed_tickers.append(company_name)
+
+    if not market_cap_data:
+        st.error("모든 기업에 대한 데이터를 가져오는 데 실패했습니다. 티커 목록이나 인터넷 연결을 확인해 주세요.")
+        return pd.DataFrame() # 빈 DataFrame 반환
+
+    # 데이터를 하나의 DataFrame으로 합치기 (동일한 인덱스를 갖도록)
+    # pd.concat을 사용하면 여러 Series를 합치면서 인덱스 정렬을 해줍니다.
+    combined_df = pd.DataFrame(market_cap_data)
+
+    # 모든 Series가 동일한 길이를 가지지 않을 수 있으므로, reindex 또는 fillna를 고려해야 합니다.
+    # 여기서는 DataFrame으로 변환된 후 결측치는 NaN으로 처리됩니다.
+
+    if failed_tickers:
+        st.warning(f"다음 기업들의 데이터를 가져오는 데 실패했거나 유효한 데이터가 부족합니다: {', '.join(failed_tickers)}")
+    
+    return combined_df
 
 # 데이터 로딩
 with st.spinner("데이터를 로딩 중입니다... 잠시만 기다려주세요."):
@@ -98,7 +117,7 @@ if not df_market_cap.empty:
     st.dataframe(df_market_cap)
 
 else:
-    st.warning("데이터를 불러오는 데 실패했거나 데이터가 없습니다. 티커 목록을 확인해 주세요.")
+    st.error("데이터를 불러오는 데 실패했거나 데이터가 없어 그래프를 그릴 수 없습니다. 티커 목록이나 인터넷 연결을 확인해 주세요.")
 
 st.markdown("""
 ---
